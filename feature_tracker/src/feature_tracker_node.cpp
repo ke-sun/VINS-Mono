@@ -7,6 +7,7 @@
 #include <message_filters/subscriber.h>
 
 #include "feature_tracker.h"
+#include <msckf_vio/CameraMeasurement.h>
 
 #define SHOW_UNDISTORTION 0
 
@@ -15,6 +16,7 @@ vector<float> r_err;
 queue<sensor_msgs::ImageConstPtr> img_buf;
 
 ros::Publisher pub_img,pub_match;
+ros::Publisher pub_feature;
 
 FeatureTracker trackerData[NUM_OF_CAM];
 double first_image_time;
@@ -135,6 +137,10 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         feature_points->header = img_msg->header;
         feature_points->header.frame_id = "world";
 
+        msckf_vio::CameraMeasurementPtr cam_measurement(
+            new msckf_vio::CameraMeasurement());
+        cam_measurement->header = img_msg->header;
+
         vector<set<int>> hash_ids(NUM_OF_CAM);
         for (int i = 0; i < NUM_OF_CAM; i++)
         {
@@ -157,6 +163,11 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
                     u_of_point.values.push_back(cur_pts[j].x);
                     v_of_point.values.push_back(cur_pts[j].y);
                     ROS_ASSERT(inBorder(cur_pts[j]));
+
+                    cam_measurement->features.push_back(msckf_vio::FeatureMeasurement());
+                    cam_measurement->features.back().id = p_id*NUM_OF_CAM + i;
+                    cam_measurement->features.back().u0 = p.x;
+                    cam_measurement->features.back().v0 = p.y;
                 }
             }
             else if (STEREO_TRACK)
@@ -185,6 +196,8 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         feature_points->channels.push_back(v_of_point);
         ROS_DEBUG("publish %f, at %f", feature_points->header.stamp.toSec(), ros::Time::now().toSec());
         pub_img.publish(feature_points);
+
+        pub_feature.publish(cam_measurement);
 
         if (SHOW_TRACK)
         {
@@ -259,6 +272,8 @@ int main(int argc, char **argv)
 
     pub_img = n.advertise<sensor_msgs::PointCloud>("feature", 1000);
     pub_match = n.advertise<sensor_msgs::Image>("feature_img",1000);
+
+    pub_feature = n.advertise<msckf_vio::CameraMeasurement>("features", 10);
     /*
     if (SHOW_TRACK)
         cv::namedWindow("vis", cv::WINDOW_NORMAL);
